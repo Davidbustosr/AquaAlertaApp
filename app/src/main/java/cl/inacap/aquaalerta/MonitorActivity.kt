@@ -10,6 +10,7 @@ import android.widget.FrameLayout
 import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -39,6 +40,11 @@ class MonitorActivity : AppCompatActivity() {
     private val envios = Executors.newSingleThreadExecutor()
     private val bitacora = ArrayDeque<String>()
     private var ipEquipo = ""
+
+    private val pedirPermisoRed = registerForActivityResult(ActivityResultContracts.RequestPermission()) { concedido ->
+        if (concedido) conectar()
+        else aviso("Sin el permiso de red local no se puede conectar al equipo")
+    }
 
     @Volatile private var canal: CanalSeguro? = null
     @Volatile private var conectando = false
@@ -119,16 +125,21 @@ class MonitorActivity : AppCompatActivity() {
         val ip = edtIp.text.toString().trim()
         val puerto = edtPuerto.text.toString().toIntOrNull()
         val codigo = edtCodigo.text.toString()
+        listOf(edtIp, edtPuerto, edtCodigo).forEach { it.mostrarError(null) }
         if (!Patterns.IP_ADDRESS.matcher(ip).matches()) {
-            edtIp.error = "IP inválida"
+            edtIp.mostrarError("IP inválida")
             return
         }
         if (puerto == null || puerto !in 1024..65535) {
-            edtPuerto.error = "1024-65535"
+            edtPuerto.mostrarError("1024-65535")
             return
         }
         if (codigo.length < 6) {
-            edtCodigo.error = "Mínimo 6 caracteres"
+            edtCodigo.mostrarError("Mínimo 6 caracteres")
+            return
+        }
+        if (!tienePermisoRedLocal()) {
+            pedirPermisoRed.launch(PERMISO_RED_LOCAL)
             return
         }
 
@@ -139,25 +150,31 @@ class MonitorActivity : AppCompatActivity() {
 
         thread(name = "monitor-aquaalerta") {
             var motivo = "Desconectado"
+            var enlazado = false
             try {
                 val llave = Seguridad.derivarLlaveCanal(codigo)
                 val socket = Socket()
                 socket.connect(InetSocketAddress(ip, puerto), TIEMPO_CONEXION_MS)
+                enlazado = true
                 socket.soTimeout = TIEMPO_SIN_DATOS_MS
                 val c = CanalSeguro(socket, llave)
                 canal = c
                 c.enviar("HOLA;usuario=${Sesion.usuario};rol=${Sesion.rol}")
                 runOnUiThread { alConectar(ip) }
+                var recibioDatos = false
                 while (true) {
                     val mensaje = c.recibir()
                     if (mensaje == null) {
-                        motivo = "El equipo cerró la conexión (¿código de enlace distinto?)"
+                        motivo = if (recibioDatos) "El equipo cerró la conexión (equipo detenido)"
+                        else "El equipo cerró la conexión (¿código de enlace distinto?)"
                         break
                     }
+                    recibioDatos = true
                     manejarMensaje(mensaje)
                 }
             } catch (e: SocketTimeoutException) {
-                motivo = "Sin datos del equipo por ${TIEMPO_SIN_DATOS_MS / 1000} s: enlace perdido"
+                motivo = if (enlazado) "Sin datos del equipo por ${TIEMPO_SIN_DATOS_MS / 1000} s: enlace perdido"
+                else "El equipo no responde en $ip:$puerto (revise IP, red Wi-Fi y que el equipo esté iniciado)"
             } catch (e: GeneralSecurityException) {
                 motivo = "Mensaje no autenticado: código de enlace incorrecto"
             } catch (e: SecurityException) {

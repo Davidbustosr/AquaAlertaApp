@@ -55,14 +55,15 @@ class RegistroActivity : AppCompatActivity() {
             val usuario = edtUsuario.text.toString().trim().lowercase()
             val contrasena = edtContrasena.text.toString()
             val confirmacion = edtConfirmar.text.toString()
+            listOf(edtUsuario, edtContrasena, edtConfirmar).forEach { it.mostrarError(null) }
 
             when {
                 !usuario.matches(Regex("[a-z0-9._]{3,20}")) ->
-                    edtUsuario.error = "3 a 20 caracteres: letras, números, punto o guion bajo"
+                    edtUsuario.mostrarError("3 a 20 caracteres: letras, números, punto o guion bajo")
                 !Seguridad.contrasenaSegura(contrasena) ->
-                    edtContrasena.error = "Mínimo 8 caracteres, con letras y números"
+                    edtContrasena.mostrarError("Mínimo 8 caracteres, con letras y números")
                 contrasena != confirmacion ->
-                    edtConfirmar.error = "Las contraseñas no coinciden"
+                    edtConfirmar.mostrarError("Las contraseñas no coinciden")
                 else -> {
                     val rol = if (primeraCuenta || rbAdmin.isChecked) Sesion.ROL_ADMIN else Sesion.ROL_OPERADOR
                     if (db.registrarUsuario(usuario, contrasena, rol)) {
@@ -70,7 +71,7 @@ class RegistroActivity : AppCompatActivity() {
                         aviso("Usuario $usuario creado con rol $rol")
                         finish()
                     } else {
-                        edtUsuario.error = "Ese usuario ya existe"
+                        edtUsuario.mostrarError("Ese usuario ya existe")
                     }
                 }
             }

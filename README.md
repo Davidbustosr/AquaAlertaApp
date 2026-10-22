@@ -44,7 +44,7 @@ se puede reemplazar por el Arduino real con un módulo ESP8266/ESP32 sin cambiar
 | Herramienta | Uso | Justificación |
 |---|---|---|
 | **Android Studio + Kotlin** | IDE y lenguaje | Lenguaje oficial recomendado por Google para Android; null-safety reduce errores. |
-| **AGP 9.4 / SDK 37, minSdk 26** | Compilación | Android 8.0+ cubre prácticamente todos los teléfonos actuales y trae PBKDF2-SHA256 y AES-GCM nativos. |
+| **AGP 9.4 / SDK 37 (Android 17), minSdk 26** | Compilación | Android 8.0+ cubre prácticamente todos los teléfonos actuales y trae PBKDF2-SHA256 y AES-GCM nativos. |
 | **AndroidX AppCompat + Material 3** | Interfaz | Estándar de diseño de Android (Material Design): tarjetas, campos con validación, colores por estado. |
 | **ConstraintLayout / ScrollView** | Pantallas | Igual que el código del taller; se adapta a distintos tamaños de pantalla. |
 | **SQLite (SQLiteOpenHelper)** | Usuarios, lecturas y eventos | Incluido en Android, sin costo ni Internet; funciona **offline**, igual que un equipo en terreno. |
@@ -167,6 +167,7 @@ Cada línea viaja **cifrada**: `Base64( IV de 12 bytes + AES-256-GCM( secuencia 
 | Datos de entrada maliciosos | Validación de largo y formato de comandos, tramas (ADC 0–1023, estados válidos), IP, PIN y usuario; consultas SQL **parametrizadas** | `Telemetria.kt`, `BaseDatos.kt` |
 | Falta de trazabilidad | **Bitácora de auditoría**: logins, comandos, cambios de estado, borrado de historial (nunca se registra el PIN ni contraseñas) | `BaseDatos.kt` |
 | Fuga de datos por respaldos | `allowBackup=false`; permisos mínimos (solo red y vibración) | `AndroidManifest.xml` |
+| Acceso a la red local sin consentimiento | Permiso **`ACCESS_LOCAL_NETWORK`** (Android 17): la app lo **pide al usuario** antes de abrir el servidor o conectarse; si se niega, no hay conexión | `EstanqueActivity.kt`, `MonitorActivity.kt` |
 
 > Sobre HTTPS/TLS: la guía menciona conexiones seguras (HTTPS, TLS). Como la comunicación es directa entre
 > dos teléfonos en la red local (sin servidor web ni certificados), se aplicó el mismo principio que TLS
@@ -192,21 +193,41 @@ Cada línea viaja **cifrada**: `Base64( IV de 12 bytes + AES-256-GCM( secuencia 
 | Código de enlace distinto | No puede descifrar (AEADBadTagException) | ✅ |
 | Canal seguro entre dos sockets TCP reales | Comando y respuesta llegan correctamente | ✅ |
 
-**Pruebas manuales en dos teléfonos** (checklist para la demostración):
+**Pruebas de integración en dos dispositivos Android** (22/10/2026, dos emuladores Android 17 conectados
+por TCP, uno en Modo Estanque y otro en Modo Monitor). Las capturas están en [`docs/capturas`](docs/capturas):
 
-| # | Prueba | Esperado |
-|---|---|---|
-| 1 | Login con contraseña incorrecta 3 veces | Bloqueo 30 s |
-| 2 | Conectar Monitor con código de enlace distinto | Rechazado en ambos teléfonos |
-| 3 | Conectar con el código correcto | Telemetría cada 1 s |
-| 4 | Subir el nivel a ~500 | ALTO, válvula cerrada, en ambos teléfonos |
-| 5 | Subir a ~800 | REBALSE, alarma en ambos teléfonos |
-| 6 | Silenciar desde el Monitor con PIN | Alarma silenciada |
-| 7 | PARO desde el Monitor con PIN incorrecto ×3 | Comandos bloqueados 60 s |
-| 8 | Reanudar desde el Monitor | Imposible; solo con botón físico |
-| 9 | Apagar el Wi-Fi del Estanque | Monitor avisa *enlace perdido* en 5 s |
-| 10 | Usuario OPERADOR en Monitor | Botones de comandos deshabilitados |
-| 11 | Historial | Lecturas y eventos guardados con fecha |
+| # | Prueba | Resultado obtenido | Evidencia |
+|---|---|---|---|
+| 1 | Registro con contraseña débil (`1234`) | Rechazada: "Mínimo 8 caracteres, con letras y números" ✅ | 02 |
+| 2 | Login con contraseña incorrecta | "Usuario o contraseña incorrectos" (mensaje genérico) ✅ | 03 |
+| 3 | 3 intentos fallidos | "Demasiados intentos fallidos. Espere 28 s" (aun con la clave correcta) ✅ | 04 |
+| 4 | Permiso de red local (Android 17) | La app lo solicita; al concederlo el equipo inicia ✅ | 06, 07 |
+| 5 | Monitor con código de enlace distinto | Monitor: "El equipo cerró la conexión"; Estanque: "CONEXION RECHAZADA … código de enlace incorrecto o mensaje alterado" ✅ | 08, 09 |
+| 6 | Conectar con el código correcto | "Conectado · canal cifrado AES-256-GCM", telemetría cada 1 s ✅ | 10 |
+| 7 | Nivel ~500 | ALTO y válvula CERRADA en ambos dispositivos ✅ | 11, 12 |
+| 8 | Nivel ~900 | REBALSE con alarma en ambos dispositivos ✅ | 13, 14 |
+| 9 | Silenciar con PIN incorrecto | "CLAVE INCORRECTA 1/3", registrado en ambas bitácoras ✅ | 15, 16 |
+| 10 | Silenciar con PIN correcto | "Respuesta: OK" / "ALARMA SILENCIADA POR REMOTO" ✅ | 17, 18 |
+| 11 | PARO de emergencia (confirmación + PIN) | Equipo en PARO, válvula CERRADA ✅ | 19, 20, 21 |
+| 12 | Reanudar | Solo con el botón físico (mantener): PARO→NORMAL, válvula ABIERTA ✅ | 22, 23 |
+| 13 | Historial SQLite | 246 lecturas y 20 eventos con fecha, usuario y origen ✅ | 24, 25 |
+| 14 | ADMIN crea usuario OPERADOR | Cuenta creada con rol OPERADOR ✅ | 26, 27 |
+| 15 | OPERADOR en Monitor | Ve el estado en vivo; Silenciar y PARO deshabilitados ✅ | 28 |
+| 16 | Detener el equipo con el Monitor conectado | "El equipo cerró la conexión (equipo detenido)", SIN DATOS ✅ | 29, 30 |
+
+### Evidencia (capturas de pantalla)
+
+| | | |
+|:-:|:-:|:-:|
+| <img src="docs/capturas/01_login.png" width="230"><br>01 Login | <img src="docs/capturas/02_registro_politica_contrasena.png" width="230"><br>02 Política de contraseñas | <img src="docs/capturas/04_login_bloqueado_3_intentos.png" width="230"><br>04 Bloqueo por intentos |
+| <img src="docs/capturas/05_menu_admin.png" width="230"><br>05 Menú ADMIN | <img src="docs/capturas/06_permiso_red_local.png" width="230"><br>06 Permiso red local | <img src="docs/capturas/07_estanque_iniciado.png" width="230"><br>07 Estanque iniciado |
+| <img src="docs/capturas/08_monitor_codigo_incorrecto.png" width="230"><br>08 Código incorrecto (Monitor) | <img src="docs/capturas/09_estanque_rechaza_codigo.png" width="230"><br>09 Rechazo (Estanque) | <img src="docs/capturas/10_monitor_conectado.png" width="230"><br>10 Conectado y cifrado |
+| <img src="docs/capturas/11_estanque_alto.png" width="230"><br>11 ALTO (Estanque) | <img src="docs/capturas/12_monitor_alto.png" width="230"><br>12 ALTO (Monitor) | <img src="docs/capturas/13_estanque_rebalse_alarma.png" width="230"><br>13 REBALSE (Estanque) |
+| <img src="docs/capturas/14_monitor_rebalse_alarma.png" width="230"><br>14 REBALSE (Monitor) | <img src="docs/capturas/15_monitor_pide_pin.png" width="230"><br>15 Pide PIN | <img src="docs/capturas/16_monitor_pin_incorrecto.png" width="230"><br>16 PIN incorrecto 1/3 |
+| <img src="docs/capturas/17_monitor_alarma_silenciada.png" width="230"><br>17 Silenciada (Monitor) | <img src="docs/capturas/18_estanque_alarma_silenciada.png" width="230"><br>18 Silenciada (Estanque) | <img src="docs/capturas/19_monitor_confirmar_paro.png" width="230"><br>19 Confirmar PARO |
+| <img src="docs/capturas/20_monitor_paro.png" width="230"><br>20 PARO (Monitor) | <img src="docs/capturas/21_estanque_paro.png" width="230"><br>21 PARO (Estanque) | <img src="docs/capturas/22_estanque_reanudado_boton.png" width="230"><br>22 Reanudado con botón |
+| <img src="docs/capturas/24_historial_lecturas.png" width="230"><br>24 Historial: lecturas | <img src="docs/capturas/25_historial_eventos.png" width="230"><br>25 Historial: eventos | <img src="docs/capturas/26_admin_crea_operador.png" width="230"><br>26 ADMIN crea OPERADOR |
+| <img src="docs/capturas/27_menu_operador.png" width="230"><br>27 Menú OPERADOR | <img src="docs/capturas/28_monitor_operador_sin_comandos.png" width="230"><br>28 OPERADOR sin comandos | <img src="docs/capturas/30_monitor_equipo_desconectado.png" width="230"><br>30 Equipo detenido |
 
 ## 9. Cómo ejecutar
 
@@ -218,8 +239,13 @@ Cada línea viaja **cifrada**: `Base64( IV de 12 bytes + AES-256-GCM( secuencia 
 6. **Teléfono B → Modo Monitor**: escribir esa IP, puerto `5050` y el mismo código de enlace → *Conectar*.
 7. Mover la barra del sensor en A y ver la reacción en B; probar Silenciar / PARO con el PIN.
 
-**Con emuladores** (si no hay dos teléfonos): iniciar dos emuladores, abrir el Estanque en `emulator-5554` y ejecutar
-`adb -s emulator-5554 forward tcp:6000 tcp:5050`; en el Monitor del segundo emulador conectar a `10.0.2.2`, puerto `6000`.
+En Android 17 la app pide el permiso **"dispositivos cercanos / red local"** al iniciar el equipo o al conectar: hay que **Permitir**.
+
+**Con emuladores** (si no hay dos teléfonos):
+1. Iniciar dos emuladores (`emulator-5554` = Estanque, `emulator-5556` = Monitor) e instalar la app en ambos.
+2. Redirigir el puerto del Estanque al Mac: `adb -s emulator-5554 forward tcp:6000 tcp:5050`.
+3. En el emulador Monitor, apagar su Wi-Fi virtual para que salga por la red `eth0`: `adb -s emulator-5556 shell svc wifi disable`.
+4. En el Monitor conectar a la IP `10.0.2.2` (el Mac visto desde el emulador), puerto `6000`.
 
 ## 10. Estructura del código
 

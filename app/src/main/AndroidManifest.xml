@@ -6,6 +6,8 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- Android 17+: permiso que el usuario concede para hablar con otros equipos de la red local -->
+    <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
 
     <!-- allowBackup=false: la base de usuarios y el historial no salen del equipo por respaldos en la nube. -->
     <application

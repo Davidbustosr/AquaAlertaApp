@@ -11,6 +11,7 @@ import android.widget.ProgressBar
 import android.widget.SeekBar
 import android.widget.TextView
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.card.MaterialCardView
 import java.io.IOException
@@ -36,6 +37,11 @@ class EstanqueActivity : AppCompatActivity() {
     private val envios = Executors.newSingleThreadExecutor()   // la red nunca se usa en el hilo principal
     private val bitacora = ArrayDeque<String>()
     private var ciclos = 0
+
+    private val pedirPermisoRed = registerForActivityResult(ActivityResultContracts.RequestPermission()) { concedido ->
+        if (concedido) iniciarEquipo()
+        else aviso("Sin el permiso de red local el Monitor no podrá conectarse")
+    }
 
     @Volatile private var logica: EstanqueLogica? = null
     @Volatile private var servidor: ServerSocket? = null
@@ -103,12 +109,18 @@ class EstanqueActivity : AppCompatActivity() {
     private fun iniciarEquipo() {
         val codigo = edtCodigo.text.toString()
         val clave = edtClave.text.toString()
+        edtCodigo.mostrarError(null)
+        edtClave.mostrarError(null)
         if (codigo.length < 6) {
-            edtCodigo.error = "Mínimo 6 caracteres"
+            edtCodigo.mostrarError("Mínimo 6 caracteres")
             return
         }
         if (!clave.matches(Regex("\\d{4,6}"))) {
-            edtClave.error = "PIN de 4 a 6 dígitos"
+            edtClave.mostrarError("PIN de 4 a 6 dígitos")
+            return
+        }
+        if (!tienePermisoRedLocal()) {
+            pedirPermisoRed.launch(PERMISO_RED_LOCAL)
             return
         }
         logica = EstanqueLogica(clave, SystemClock.elapsedRealtime())
