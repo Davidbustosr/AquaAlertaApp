@@ -1,0 +1,32 @@
+<resources>
+    <style name="Theme.AquaAlerta" parent="Theme.Material3.Light.NoActionBar">
+        <item name="colorPrimary">@color/agua</item>
+        <item name="colorOnPrimary">@color/blanco</item>
+        <item name="colorPrimaryContainer">@color/agua_claro</item>
+        <item name="colorSecondary">@color/agua_oscuro</item>
+        <item name="android:windowBackground">@color/fondo</item>
+    </style>
+
+    <!-- Titulo de cada tarjeta -->
+    <style name="TituloTarjeta">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:textColor">@color/agua_oscuro</item>
+        <item name="android:textSize">16sp</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <style name="Tarjeta" parent="Widget.Material3.CardView.Elevated">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginTop">12dp</item>
+        <item name="cardCornerRadius">16dp</item>
+        <item name="cardBackgroundColor">@color/blanco</item>
+    </style>
+
+    <style name="Campo" parent="Widget.Material3.TextInputLayout.OutlinedBox">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginTop">10dp</item>
+    </style>
+</resources>
